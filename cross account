@@ -1,0 +1,99 @@
+Understanding Trusted Entity & Cross-Account IAM Role in AWS
+In AWS IAM, a trusted entity is the AWS service, IAM user, or another AWS account that is allowed to assume a role. Cross-account IAM roles allow one AWS account (Account A) to securely access resources in another AWS account (Account B) without sharing credentials.
+
+🔹 Use Case: Cross-Account Access with IAM Role
+Imagine you have:
+
+Account A (Source Account) → This is where your IAM users exist.
+Account B (Target Account) → This account has S3 buckets, EC2, or other resources that need to be accessed.
+Instead of sharing IAM user credentials, we create a cross-account IAM role in Account B and allow Account A to assume it.
+
+🔹 Step-by-Step Implementation
+Step 1: Create IAM Role in Target Account (Account B)
+Go to IAM Console in Account B.
+Navigate to Roles → Create role.
+Choose Trusted entity type → Another AWS Account.
+Enter the AWS Account ID of Account A.
+Attach the required policy (e.g., AmazonS3ReadOnlyAccess if you want to allow read-only access to S3).
+Click Create role and note the Role ARN (e.g., arn:aws:iam::111122223333:role/CrossAccountS3Access).
+Step 2: Grant Permission to Assume the Role
+Modify the trust policy of the role in Account B to allow Account A to assume it.
+
+Go to IAM → Roles → Select the role → Edit trust policy and set it as:
+
+json
+Copy
+Edit
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::444455556666:root"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+🔹 Replace 444455556666 with Account A’s AWS Account ID.
+
+Step 3: Assume the Role from Account A
+In Account A, create an IAM user or role with the following permission:
+json
+Copy
+Edit
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::111122223333:role/CrossAccountS3Access"
+    }
+  ]
+}
+🔹 Replace 111122223333 with Account B’s AWS Account ID.
+
+Step 4: Assume the Role Using AWS CLI
+Run this command in Account A to assume the role:
+
+sh
+Copy
+Edit
+aws sts assume-role --role-arn "arn:aws:iam::111122223333:role/CrossAccountS3Access" --role-session-name CrossAccountSession
+🔹 Example Output:
+
+json
+Copy
+Edit
+{
+  "Credentials": {
+    "AccessKeyId": "ASIA...",
+    "SecretAccessKey": "wJalrX...",
+    "SessionToken": "FQoGZXIvYXdzEDM...",
+    "Expiration": "2025-02-08T15:20:00Z"
+  }
+}
+Step 5: Use Temporary Credentials
+Now, use these credentials to access S3 in Account B:
+
+sh
+Copy
+Edit
+export AWS_ACCESS_KEY_ID="ASIA..."
+export AWS_SECRET_ACCESS_KEY="wJalrX..."
+export AWS_SESSION_TOKEN="FQoGZXIvYXdzEDM..."
+Check access to the S3 bucket in Account B:
+
+sh
+Copy
+Edit
+aws s3 ls s3://my-bucket-in-account-b
+🔹 Summary
+Step	Action
+Step 1	Create an IAM Role in Account B and allow Account A to assume it
+Step 2	Edit the trust policy to allow cross-account access
+Step 3	Give IAM users in Account A permission to assume the role
+Step 4	Use aws sts assume-role to get temporary credentials
+Step 5	Use those credentials to access resources in Account B
