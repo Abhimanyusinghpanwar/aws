@@ -1,0 +1,252 @@
+1. A Terraform apply fails due to a state file lock issue. How would you resolve it?
+
+Problem:
+
+Terraform uses a state file lock mechanism to prevent simultaneous updates. If a process crashes or an apply is forcefully terminated, the lock might remain, blocking further operations.
+
+Solution:
+
+Check the lock: If using an S3 backend with DynamoDB for locking, run:
+
+aws dynamodb scan --table-name terraform-lock-table
+
+Manually unlock: If it's confirmed that no active process is using the lock, manually force unlock:
+
+terraform force-unlock <LOCK_ID>
+
+Identify stuck process: Check if a terraform apply or terraform plan is still running in another session and terminate it if needed.
+
+
+Real Use Case:
+
+A DevOps engineer runs terraform apply on an EC2 provisioning script. The terminal crashes before completion. When rerunning, Terraform errors with "State file locked by another process." The engineer checks the DynamoDB lock table, verifies no active process, and uses force-unlock to proceed.
+
+
+---
+
+2. Your Terraform deployment created resources in AWS, but some are not being deleted when destroying the infrastructure. What went wrong?
+
+Possible Reasons & Fixes:
+
+1. Resources created manually: Terraform manages only resources declared in code. Manually created resources won’t be deleted.
+
+Fix: Identify orphaned resources using AWS console or CLI and delete manually.
+
+
+
+2. Resource missing from state: If a resource was removed from .tf files but is still in AWS, it's likely missing from the state.
+
+Fix: Reimport the resource into Terraform state and then destroy it:
+
+terraform import aws_instance.my_ec2 i-1234567890abcdef
+terraform destroy
+
+
+
+3. Protected resources: If prevent_destroy = true is set in resource config, Terraform won’t delete them.
+
+Fix: Remove the lifecycle rule and retry.
+
+
+
+
+Real Use Case:
+
+An engineer provisions an RDS instance and an S3 bucket. On terraform destroy, the S3 bucket is not deleted. Investigation reveals that an lifecycle { prevent_destroy = true } rule exists. After removing it, terraform apply successfully deletes the bucket.
+
+
+---
+
+3. You need to deploy infrastructure across multiple AWS accounts using Terraform. What's the best approach?
+
+Solution:
+
+Use workspaces or provider aliasing:
+
+1. Workspaces Approach (if using the same Terraform code across accounts)
+
+terraform workspace new dev
+terraform workspace new prod
+terraform apply -var-file=dev.tfvars
+terraform apply -var-file=prod.tfvars
+
+
+2. Provider Aliasing (Best for multiple accounts within the same deployment)
+
+provider "aws" {
+  alias  = "dev"
+  region = "us-east-1"
+  assume_role {
+    role_arn = "arn:aws:iam::111111111111:role/TerraformRole"
+  }
+}
+
+provider "aws" {
+  alias  = "prod"
+  region = "us-west-2"
+  assume_role {
+    role_arn = "arn:aws:iam::222222222222:role/TerraformRole"
+  }
+}
+
+resource "aws_instance" "dev" {
+  provider = aws.dev
+  ami      = "ami-123456"
+}
+
+resource "aws_instance" "prod" {
+  provider = aws.prod
+  ami      = "ami-654321"
+}
+
+
+
+Real Use Case:
+
+A DevOps team manages multiple AWS accounts (e.g., dev, staging, production). They use AWS IAM roles and provider aliasing to deploy infrastructure across all accounts without maintaining separate Terraform configurations.
+
+
+---
+
+4. A junior engineer accidentally deleted the Terraform state file. How would you recover?
+
+Solution:
+
+1. Check S3 backend versioning (if enabled)
+
+If state was stored in an S3 bucket with versioning enabled:
+
+aws s3 ls s3://terraform-state-bucket/
+aws s3 cp s3://terraform-state-bucket/statefile.tfstate <local_path>
+
+
+
+2. Use Terraform Cloud or Remote Backend if enabled
+
+Terraform Cloud retains backups of the state. You can retrieve the last state snapshot.
+
+
+
+3. Recreate state with terraform import
+
+If no backup exists, manually import resources back into the state:
+
+terraform import aws_instance.my_ec2 i-1234567890abcdef
+
+
+
+
+Real Use Case:
+
+A new engineer mistakenly deletes the state file stored in an S3 backend. Since S3 versioning was enabled, the DevOps lead restores the latest state version and re-runs terraform apply without data loss.
+
+
+---
+
+5. Your Terraform plan shows unexpected changes even when no code modifications were made. How would you troubleshoot?
+
+Possible Causes & Fixes:
+
+1. Drift in manually changed resources
+
+Run terraform refresh and check differences.
+
+
+
+2. Default values in modules changed
+
+Ensure external modules haven’t been updated unexpectedly.
+
+
+
+3. Terraform provider updates
+
+Lock provider versions in versions.tf:
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+  }
+}
+
+
+
+
+Real Use Case:
+
+An engineer runs terraform plan and sees changes to an EKS cluster. Investigation shows an upstream module update changed node_group_capacity. Locking the module version in terraform.lock.hcl fixes the issue.
+
+
+---
+
+6. The Terraform execution is slow due to too many dependent modules. How can you optimize it?
+
+Solution:
+
+1. Parallel Execution
+
+Use -parallelism to optimize apply time:
+
+terraform apply -parallelism=10
+
+
+
+2. Optimize State Storage
+
+Split large Terraform configurations into multiple state files to reduce lock contention.
+
+
+
+3. Use Data Sources Instead of Dependencies
+
+Instead of explicitly defining resources, use data sources to avoid unnecessary dependencies.
+
+
+
+
+Real Use Case:
+
+A Terraform project managing 100+ EC2 instances and VPC peering links took 20 minutes to execute. By increasing -parallelism and breaking state files into modules, execution time dropped to 5 minutes.
+
+
+---
+
+7. Your Terraform code is failing intermittently due to API rate limits from a cloud provider. How would you handle this?
+
+Solution:
+
+1. Enable Terraform Retries
+
+Set provider-level retry behavior:
+
+provider "aws" {
+  request_timeout = "60s"
+  max_retries     = 5
+}
+
+
+
+2. Use depends_on To Delay Execution
+
+If resources create API spikes, introduce delays:
+
+resource "aws_instance" "example" {
+  depends_on = [aws_vpc.my_vpc]
+}
+
+
+
+3. Batch Resource Creation
+
+Use count or for_each to reduce API calls in bulk provisioning.
+
+
+
+
+Real Use Case:
+
+A Terraform script deploying 100 AWS IAM roles frequently failed due to API throttling. By adding retries and introducing a batch creation approach, the deployment stabilized without failures.
+
