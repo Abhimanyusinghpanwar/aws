@@ -250,3 +250,157 @@ Real Use Case:
 
 A Terraform script deploying 100 AWS IAM roles frequently failed due to API throttling. By adding retries and introducing a batch creation approach, the deployment stabilized without failures.
 
+
+8. You need to enforce strict security policies for infrastructure provisioning with Terraform. How would you achieve this?
+
+Solution:
+
+1. Use Sentinel or Open Policy Agent (OPA) for Policy Enforcement
+
+Terraform Cloud/Enterprise offers Sentinel to enforce security rules.
+
+Open Policy Agent (OPA) integrates with Terraform to ensure compliance.
+
+
+Example Sentinel policy to restrict instance types:
+
+import "tfplan/v2" as tfplan
+
+main = rule {
+  all tfplan.resource_changes.aws_instance as _, instances {
+    all instances.applied as instance {
+      instance.change.after.instance_type in ["t3.micro", "t3.small"]
+    }
+  }
+}
+
+
+2. Restrict IAM Roles & Permissions
+
+Use least privilege IAM roles for Terraform execution.
+
+Block unnecessary access to sensitive resources.
+
+
+
+3. Implement Security Scanners (e.g., tfsec, Checkov, AWS Config)
+
+Scan Terraform code for security misconfigurations:
+
+tfsec .
+checkov -d .
+
+
+
+4. Use S3 Backend with Encryption & Versioning
+
+Store Terraform state securely in an S3 bucket with encryption and versioning:
+
+bucket = "terraform-state-bucket"
+encrypt = true
+versioning { enabled = true }
+
+
+
+
+Real Use Case:
+
+A company mandates that all Terraform-managed EC2 instances must use only t3.micro or t3.small. They enforce this using Sentinel policies in Terraform Cloud, preventing accidental deployment of large, costly instances.
+
+
+---
+
+9. Your Terraform deployment in a multi-cloud environment is facing latency issues. How would you optimize it?
+
+Solution:
+
+1. Parallel Execution Across Providers
+
+Define multiple providers in the same configuration to parallelize execution:
+
+provider "aws" {
+  region = "us-east-1"
+}
+
+provider "google" {
+  project = "my-gcp-project"
+  region  = "us-central1"
+}
+
+
+
+2. Reduce Dependency Chains
+
+Instead of making GCP resources wait for AWS provisioning, use data sources to fetch required information dynamically.
+
+
+
+3. Use Terraform Workspaces for Multi-Cloud Isolation
+
+Create separate Terraform workspaces to avoid cross-cloud dependency slowdowns:
+
+terraform workspace new aws_deployment
+terraform apply -workspace=aws_deployment
+
+
+
+4. Enable Provider Caching
+
+Terraform downloads provider plugins every execution. Use provider caching to reduce redundant downloads.
+
+
+
+
+Real Use Case:
+
+A fintech company deploying AWS (for compute) and GCP (for analytics) faced high latency due to sequential provisioning. By parallelizing Terraform providers and optimizing dependencies, they reduced deployment time from 25 minutes to 10 minutes.
+
+
+---
+
+10. A Terraform apply failed midway, leaving some resources partially created. How do you fix this while ensuring consistency?
+
+Solution:
+
+1. Check Terraform State for Partial Resources
+
+Run terraform state list to identify which resources were created.
+
+Example:
+
+terraform state list | grep aws_instance
+
+
+
+2. Manually Import Resources (If Missing from State)
+
+If Terraform did not register a resource but it exists in AWS, import it back:
+
+terraform import aws_instance.my_instance i-1234567890abcdef
+
+
+
+3. Use terraform refresh to Sync State
+
+Running terraform refresh updates the state file with actual cloud resource statuses.
+
+
+
+4. Manually Delete Failed Resources (If Needed)
+
+If the resource is partially created and cannot be recovered, manually delete it from AWS before retrying.
+
+
+
+5. Retry terraform apply to Resume Execution
+
+Terraform will continue from where it left off if the state is correct.
+
+
+
+
+Real Use Case:
+
+An engineer provisions an RDS database using Terraform. Network timeout causes terraform apply to fail halfway. Investigation shows the RDS instance exists in AWS but not in the state file. Instead of recreating, they import the instance, run terraform refresh, and then reapply the configuration successfully.
+
+
